@@ -1,70 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <ctype.h>
 #include <termios.h>
 
 #include "common.h"
 
-#define ORIGINAL 0
-#define ADDED 1
-#define FAIL 2
-
-#define da_INIT(type) ((type){0, 0, NULL})
-#define INIT_CAPACITY 1024
-
-#define da_append(da, item)\
-    do {\
-        if (da.len == da.capacity) {\
-            if (da.capacity == 0) {\
-                da.capacity = INIT_CAPACITY;\
-            } else {\
-                da.capacity *= 2;\
-            }\
-            da.items = realloc(da.items, da.capacity * sizeof(*da.items));\
-        }\
-        da.items[da.len++] = item;\
-    } while (0)
-
-// #define ll_append(ll, item)
-//     do {
-//         NODE *new = malloc(sizeof(NODE));
-//         new.item = 
-//     } while (0)
-
-typedef struct da_sb {
-    size_t len;
-    size_t capacity;
-    char *items;
-} STRINGBUILDER;
-
-typedef struct piece {
-    int type;
-    size_t offset;
-    size_t len;
-} PIECE;
-
-typedef struct NODE NODE;
-
-typedef struct NODE {
-    void *item;
-    NODE *previous;
-    NODE *next;
-} NODE;
-
-typedef struct ll {
-    size_t len;
-    NODE *head;
-    NODE *tail;
-} LIST;
-
-typedef struct vector2d {
-    int row;
-    int col;
-} V2;
-
-typedef V2 Cursor;
 
 struct termios orig_termios;
 
@@ -119,12 +62,66 @@ void list_append(LIST *list, void *item) {
     list->len++;
 }
 char *orig_buf;
-char *added_buf = "hi ";
+STRINGBUILDER added_buf;
 
-unsigned short ws_row;
+/*---------
+ The piece table is abstracted to a continuous array
+ Then the array is abstracted to lines
+*/
+int text_ptr = 0;   //points to the character in the abstracted array
+int page_ptr = 0;   //points to the start of the first line in the terminal's view
+int total_len;
+//terminal's dimension
+unsigned short ws_row;   
 unsigned short ws_col; 
 
+//list of piecetable
+LIST list;
+
 Cursor cursor_position = {1, 1}; // 1 based since row and col are also 1 based
+
+V2 find_global_cursor_coordinate() {
+    int row = 1;
+    int col = 1;
+    int next_char_ptr = 0; //the next char to be checked against '\n'
+
+    NODE *current = list.head;
+    
+    for (NODE *current = list.head; current != NULL; current = current->next) {
+        PIECE piece = *(PIECE *)(current->item);
+        for (int i = 0; i < piece.len; i++) { 
+            if (next_char_ptr == text_ptr) goto done;   //we dont check the cursor's char
+
+            char *buf = piece.type == ORIGINAL ? orig_buf : added_buf.items;
+            if (buf[piece.offset + i] != '\n') {
+                col++;
+            } else {
+                row++;
+                col = 1;
+            }
+            next_char_ptr++;
+        }
+    }
+
+    done:
+        return (V2){col, row};
+}
+
+
+void update_cursor_position(KeyboardKey key) {
+    //TODO rolling  
+    //V2 global_cursor_coordinate = find_global_cursor_coordinate();
+    switch (key) {
+    case KEY_LEFT:
+        if (text_ptr > 0) text_ptr--;
+        
+        break;
+    case KEY_RIGHT:
+        if (text_ptr < total_len) text_ptr++;
+        break;
+    }
+
+}
 
 void update_term_dimension() {
     struct winsize ws;
@@ -136,10 +133,14 @@ void update_term_dimension() {
 KeyboardKey get_input() {
     char buf[4] = {'\0', '\0', '\0', '\0'};
     int nread = read(STDIN_FILENO, buf, 4);
-
+    //printf("Key read: %d, %d, %d, %d\n", (int)buf[0], (int)buf[1], (int)buf[2], (int)buf[3]);
+    if (buf[0] == '\b' || buf[0] == 127) {
+        return KEY_BACKSPACE;
+    }
     if (isprint(buf[0])) {
         return (KeyboardKey)buf[0];
-    } else if (buf[0] == '\x1b') {
+    } 
+    if (buf[0] == '\x1b') {
         if (buf[1] == '[') {
             switch(buf[2]) {
             case 'A':
@@ -166,22 +167,29 @@ KeyboardKey get_input() {
     return KEY_NULL; //anything on the keyboard not printable nor arrow
 }
 
-void move_cursor(KeyboardKey key) {
-    switch (key) {
-    case KEY_UP:
-        write(STDOUT_FILENO, "\x1b[A", 3);
-        break;
-    case KEY_DOWN:
-        write(STDOUT_FILENO, "\x1b[B", 3);
-        break;
-    case KEY_RIGHT:
-        write(STDOUT_FILENO, "\x1b[C", 3);
-        break;
-    case KEY_LEFT:
-        write(STDOUT_FILENO, "\x1b[D", 3);
-        break;
-    }
+void move_cursor() {   
+    cursor_position = find_global_cursor_coordinate(); 
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "\x1b[%d;%dH", cursor_position.row, cursor_position.col);
+    write(STDOUT_FILENO, buf, len);
 }
+
+// void move_cursor(KeyboardKey key) {
+ //     switch (key) {
+ //     case KEY_UP:
+ //         write(STDOUT_FILENO, "\x1b[A", 3);
+ //         break;
+ //     case KEY_DOWN:
+ //         write(STDOUT_FILENO, "\x1b[B", 3);
+ //         break;
+ //     case KEY_RIGHT:
+ //         write(STDOUT_FILENO, "\x1b[C", 3);
+ //         break;
+ //     case KEY_LEFT:
+ //         write(STDOUT_FILENO, "\x1b[D", 3);
+ //         break;
+ //     }
+ // }
 
 void process_input(KeyboardKey key) {
     switch(key) {
@@ -189,16 +197,21 @@ void process_input(KeyboardKey key) {
     case KEY_DOWN:
     case KEY_RIGHT:
     case KEY_LEFT:
-        move_cursor(key);
+        update_cursor_position(key);
         break;
     case KEY_ESCAPE:
     case KEY_NULL:
         return;
+    case KEY_BACKSPACE:
+        
+        //TODO update the piece table
+        break;
     default:
         write(STDOUT_FILENO, (char *)&key, 1);
         break;
     }
 }
+
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -206,24 +219,29 @@ int main(int argc, char **argv) {
         return 69;
     }
 
-    //load original file
-    
+    added_buf = da_INIT(STRINGBUILDER);
     PIECE original = load(argv[1]); //exit upon error
-    PIECE added = {ADDED, 0, 3};
+    total_len = original.len;
+    printf("len: %d\n", total_len);
+    list = list_init();
+    list_append(&list, (void *)&original);
     
     enable_raw_mode();
 
-    LIST list = list_init();
-    list_append(&list, (void *)&original);
-    list_append(&list, (void *)&added);
-    //fprintf(stdout, "helloworld\x1b\n");
-
     clear_screen();
+    update_term_dimension();
+    render(list);
+    move_cursor();
+    
     while (1) {
-        
+        //clear_screen();
         update_term_dimension();
+    
+
+        //render(list); //TODO only re render when line change?    
         KeyboardKey key = get_input();
         process_input(key);  
+        move_cursor();
     }
     
 
@@ -231,7 +249,7 @@ int main(int argc, char **argv) {
 }
 
 void clear_screen() {
-    write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7);
+    write(STDOUT_FILENO, "\x1b[2J\x1b[H", 7); //clear screen, then move to topleft
 }
 
 void disable_raw_mode() {
@@ -287,20 +305,61 @@ PIECE load(char *path) {
 }
 
 void render(LIST list) {
+    STRINGBUILDER sb = da_INIT(STRINGBUILDER);
     NODE *current = list.head;
+    int ptr = 0;
+    int line_count = 0;
+
+    //print the line from the page ptr
     while (current) {
+        int i = 0;
+
         PIECE piece = *(PIECE *)current->item;
-        char *start_ptr;
-        if (piece.type == ORIGINAL) {
-            start_ptr = orig_buf + piece.offset;
-        } else {
-            start_ptr = added_buf + piece.offset;
+        char *buf = (piece.type == ORIGINAL) ? (orig_buf + piece.offset) : (added_buf.items + piece.offset);
+        while (i < piece.len) {
+            if (ptr < page_ptr) goto done; //dont print
+
+            char c = buf[i];
+            if (c == '\n') {
+                da_append(sb, '\r');
+                da_append(sb, '\n');
+                write(STDOUT_FILENO, sb.items, sb.len);
+                da_free(sb);
+                sb = da_INIT(STRINGBUILDER);
+                line_count++;
+                if(line_count == (ws_row - 1)) break; //max row(line) reached
+            } else {
+                da_append(sb, c);
+            }
+
+
+
+            done:
+                i++;
+                ptr++;
         }
-        write(STDOUT_FILENO, start_ptr, piece.len);
 
         current = current->next;
     }
-    printf("END\n");
-    return;
+
+    //fill the unused line
+    for (;line_count < ws_row - 1; line_count++) {
+        write(STDOUT_FILENO, "~\r\n", 3);
+    }
+
+
+    //bottom line info
+    // Set blue background and white foreground
+    write(STDOUT_FILENO, "\x1b[44;37m", 8);
+
+    // Fill entire row with background color
+    write(STDOUT_FILENO, "\x1b[2K", 4);
+
+    // Print title
+    char *title = "\uE001\uE002EDITOR";
+    write(STDOUT_FILENO, title, strlen(title));
+
+    // Reset colors
+    write(STDOUT_FILENO, "\x1b[0m", 4);
 }
 

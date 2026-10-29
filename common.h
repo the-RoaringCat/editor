@@ -1,7 +1,59 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#define ORIGINAL 0
+#define ADDED 1
+#define FAIL 2
 
+#define da_INIT(type) ((type){0, 0, NULL})
+#define INIT_CAPACITY 1024
+
+#define da_append(da, item)\
+    do {\
+        if (da.len == da.capacity) {\
+            if (da.capacity == 0) {\
+                da.capacity = INIT_CAPACITY;\
+            } else {\
+                da.capacity *= 2;\
+            }\
+            da.items = realloc(da.items, da.capacity * sizeof(*da.items));\
+        }\
+        da.items[da.len++] = item;\
+    } while (0)
+
+#define da_free(da) free(da.items)
+typedef struct da_sb {
+    size_t len;
+    size_t capacity;
+    char *items;
+} STRINGBUILDER;
+
+typedef struct piece {
+    int type;
+    size_t offset;
+    size_t len;
+} PIECE;
+
+typedef struct NODE NODE;
+
+typedef struct NODE {
+    void *item;
+    NODE *previous;
+    NODE *next;
+} NODE;
+
+typedef struct ll {
+    size_t len;
+    NODE *head;
+    NODE *tail;
+} LIST;
+
+typedef struct vector2d {
+    int col;
+    int row;
+} V2;
+
+typedef V2 Cursor;
 
 
 //copy from raylib
