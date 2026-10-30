@@ -61,6 +61,8 @@ void list_append(LIST *list, void *item) {
     list->tail = new;
     list->len++;
 }
+
+void node_append()
 char *orig_buf;
 STRINGBUILDER added_buf;
 
@@ -71,6 +73,9 @@ STRINGBUILDER added_buf;
 int text_ptr = 0;   //points to the character in the abstracted array
 int page_ptr = 0;   //points to the start of the first line in the terminal's view
 int total_len;
+
+NODE *current_node;
+int current_len;    //len of characters in the current piece and before the cursor
 //terminal's dimension
 unsigned short ws_row;   
 unsigned short ws_col; 
@@ -107,6 +112,19 @@ V2 find_global_cursor_coordinate() {
         return (V2){col, row};
 }
 
+void find_current_node() {
+    int len = 0;    //len of pieces before the piece that holds the cursor  
+    for (NODE *current = list.head; current != NULL; current = current->next) {
+        PIECE piece = *(PIECE *)(current->item);
+        if (text_ptr < (len + piece.len)) {
+            current_len = text_ptr - len;
+            current_node = current;
+            return;
+        }
+        len += piece.len;
+    }
+    current_node = current;
+}
 
 void update_cursor_position(KeyboardKey key) {
     //TODO rolling  
@@ -174,22 +192,25 @@ void move_cursor() {
     write(STDOUT_FILENO, buf, len);
 }
 
-// void move_cursor(KeyboardKey key) {
- //     switch (key) {
- //     case KEY_UP:
- //         write(STDOUT_FILENO, "\x1b[A", 3);
- //         break;
- //     case KEY_DOWN:
- //         write(STDOUT_FILENO, "\x1b[B", 3);
- //         break;
- //     case KEY_RIGHT:
- //         write(STDOUT_FILENO, "\x1b[C", 3);
- //         break;
- //     case KEY_LEFT:
- //         write(STDOUT_FILENO, "\x1b[D", 3);
- //         break;
- //     }
- // }
+void insert(KeyboardKey key) {
+    PIECE *piece = current_node->item;
+    switch(piece->type) {
+    case ORIGINAL:
+        int remaining_len = piece->len - current_len;
+        PIECE *added_piece = malloc(sizeof(PIECE));
+        if (remaining_len != 0) {
+            PIECE *split_orig_piece = malloc(sizeof(PIECE));
+            
+            added_piece.
+
+        }
+
+    case ADDED:
+    }
+    total_len++;
+    update_cursor_position(KEY_RIGHT);
+    move_cursor();
+}
 
 void process_input(KeyboardKey key) {
     switch(key) {
@@ -207,7 +228,9 @@ void process_input(KeyboardKey key) {
         //TODO update the piece table
         break;
     default:
-        write(STDOUT_FILENO, (char *)&key, 1);
+        //here should be printable
+        //write(STDOUT_FILENO, (char *)&key, 1);
+        insert(key)
         break;
     }
 }

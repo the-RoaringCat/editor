@@ -28,11 +28,7 @@ typedef struct da_sb {
     char *items;
 } STRINGBUILDER;
 
-typedef struct piece {
-    int type;
-    size_t offset;
-    size_t len;
-} PIECE;
+
 
 typedef struct NODE NODE;
 
