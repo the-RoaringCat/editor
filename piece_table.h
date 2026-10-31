@@ -42,14 +42,12 @@ PIECE *sentinel_tail;
 void p_move_left() {
     if (text_index > 0) {
         text_index--;
-        write(STDOUT_FILENO, "\x1b[D", 3);
     }
 }
 
 void p_move_right() {
     if (text_index < total_len - 1) {
-        text_index++;
-        write(STDOUT_FILENO, "\x1b[C", 3);
+        text_index++; 
     }
 }
 void buffer_init(char *path) {
@@ -82,7 +80,8 @@ void buffer_init(char *path) {
             }
             break;
         }
-    }  
+    } 
+    fclose(fp);
 }
 
 
@@ -202,18 +201,6 @@ V2 find_global_cursor_coordinate() {
 
     done:
         return (V2){col, row};
-}
-
-PIECE *find_current_piece() {
-    int len = 0;    //len of pieces before the piece that holds the cursor  
-    PIECE *current;
-    for (current = sentinel_head->next; current->next; current = current->next) {
-        if (text_index < (len + current->len)) {
-            return current;
-        }
-        len += current->len;
-    }
-    return current;
 }
 
 void free_piece_table() {

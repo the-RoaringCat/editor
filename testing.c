@@ -13,6 +13,7 @@
 struct termios orig_termios;
 int local_index = 0;
 STRINGBUILDER sb;
+char *file_path;
 void render() {
     V2 cursor_position = find_global_cursor_coordinate();
     int checked_index;
@@ -121,22 +122,44 @@ void process_key(KeyboardKey key) {
         }
         p_move_right();
         break;
+    case KEY_ESCAPE:
+        //save the file
+        insert(sb); //in case the current editting field is not saved
+        FILE *fp;
+        fp = fopen(file_path, "wb");
+        if (fp == NULL) {
+            printf("fopen: cannot open file for saving\n");
+            exit(67);
+        }
+        
+        PIECE *current;
+        for (current = sentinel_head->next; current->next; current= current->next) {
+            char *buf = current->type == ORIGINAL ? original.items : added.items;
+            fwrite(buf + current->offset, 1, current->len, fp);
+        }
+        fclose(fp);
+        exit(0);
+        break;
     case KEY_UP:
     case KEY_DOWN:
-    case KEY_ESCAPE:
+    
     case KEY_BACKSPACE:
     case KEY_NULL:
         break;
     default:
         da_append(sb, (char)key);
-        local_index++;
         break;
     }
 }
 
 
-int main() {
-    buffer_init("test.c");
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        printf("expecting one argument <file>\n");
+        return 69;
+    }
+    file_path = argv[1];
+    buffer_init(file_path);
     piece_table_init();
     
     enable_raw_mode();
