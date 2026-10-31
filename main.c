@@ -187,9 +187,7 @@ KeyboardKey get_input() {
 
 void move_cursor() {   
     cursor_position = find_global_cursor_coordinate(); 
-    char buf[32];
-    int len = snprintf(buf, sizeof(buf), "\x1b[%d;%dH", cursor_position.row, cursor_position.col);
-    write(STDOUT_FILENO, buf, len);
+    
 }
 
 void insert(KeyboardKey key) {

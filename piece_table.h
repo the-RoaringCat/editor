@@ -29,6 +29,8 @@ void meta_init();
 PIECE *find_piece_from_index(int index, int *checked_index);
 void insert();
 void free_piece_table();
+void p_move_left();
+void p_move_right();
 
 STRINGBUILDER original;
 STRINGBUILDER added;
@@ -37,7 +39,19 @@ PIECE *sentinel_tail;
 
 #if defined(PIECE_TABLE_IMPLEMENTATION)
 
+void p_move_left() {
+    if (text_index > 0) {
+        text_index--;
+        write(STDOUT_FILENO, "\x1b[D", 3);
+    }
+}
 
+void p_move_right() {
+    if (text_index < total_len - 1) {
+        text_index++;
+        write(STDOUT_FILENO, "\x1b[C", 3);
+    }
+}
 void buffer_init(char *path) {
     added = da_INIT(STRINGBUILDER);
     original = da_INIT(STRINGBUILDER);
@@ -118,6 +132,9 @@ static void added_append(STRINGBUILDER newtext) {
 }
 
 void insert(STRINGBUILDER newtext) {
+    if (newtext.len == 0) {
+        return;
+    }
     int checked_len;
     PIECE *old_p = find_piece_from_index(text_index, &checked_len);
 
@@ -125,6 +142,7 @@ void insert(STRINGBUILDER newtext) {
     PIECE *new_p = malloc(sizeof(PIECE));
     *new_p = (PIECE){ADDED, added.len, newtext.len, NULL, NULL}; //added's len is the offset
     added_append(newtext);
+    total_len += newtext.len;
 
     //TODO now the left and right carry different meaning when we split the boundry and split the 
     //middle of a piece, maybe it can be fixed for readablility
@@ -156,6 +174,46 @@ void insert(STRINGBUILDER newtext) {
 
     new_p->previous = left;
     new_p->next = right;
+
+    text_index+= newtext.len;
+}
+
+V2 find_global_cursor_coordinate() {
+    int row = 1;
+    int col = 1;
+    int next_char_ptr = 0; //the next char to be checked against '\n'
+
+    PIECE *current;
+    
+    for (current = sentinel_head->next; current->next; current = current->next) {
+        for (int i = 0; i < current->len; i++) { 
+            if (next_char_ptr == text_index) goto done;   //we dont check the cursor's char
+
+            char *buf = current->type == ORIGINAL ? original.items : added.items;
+            if (buf[current->offset + i] != '\n') {
+                col++;
+            } else {
+                row++;
+                col = 1;
+            }
+            next_char_ptr++;
+        }
+    }
+
+    done:
+        return (V2){col, row};
+}
+
+PIECE *find_current_piece() {
+    int len = 0;    //len of pieces before the piece that holds the cursor  
+    PIECE *current;
+    for (current = sentinel_head->next; current->next; current = current->next) {
+        if (text_index < (len + current->len)) {
+            return current;
+        }
+        len += current->len;
+    }
+    return current;
 }
 
 void free_piece_table() {
