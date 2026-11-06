@@ -8,9 +8,6 @@
 #define ORIGINAL    0
 #define ADDED       1
 
-
-
-
 int text_index;   //points to the combined resultant array
 int total_len;  //len of the combind resultant array
 
@@ -22,6 +19,32 @@ typedef struct piece_descriptor {
     struct piece_descriptor *previous; //linked list
     struct piece_descriptor *next;
 } PIECE;
+
+typedef struct piece_iterator {
+    PIECE *next;
+    PIECE *end;
+    int offset;
+} PieceIterator;
+
+typedef struct history {
+    PIECE *left;
+    PIECE *right;
+
+    int len;
+    int index;
+    int is_boundry;
+} HISTORY;
+
+typedef struct da_history_stack {
+    union {
+        size_t len;
+        size_t undo_len;
+    };
+    size_t capacity;
+    size_t redo_len;
+    HISTORY *items;
+} HistoryStack;
+
 
 void buffer_init(char *path);
 void piece_table_init();
@@ -36,8 +59,23 @@ STRINGBUILDER original;
 STRINGBUILDER added;
 PIECE *sentinel_head;
 PIECE *sentinel_tail;
+HistoryStack history_stack;
 
 #if defined(PIECE_TABLE_IMPLEMENTATION)
+
+PIECE *piece_next(PieceIterator *iterator, int *start_index) {
+    if (iterator->next == iterator->end) {
+        return NULL;
+    }
+
+    PIECE *pp = iterator->next;         //the one inside iterator, to be returned
+    *start_index = iterator->offset;    //document offset of the piece returned
+
+    iterator->offset += pp->len;
+    iterator->next = pp->next;
+    
+    return pp;
+}
 
 void p_move_left() {
     if (text_index > 0) {
@@ -101,6 +139,53 @@ void piece_table_init() {
 void meta_init() {
     text_index = 0;
     total_len = original.len;
+
+    history_stack = da_INIT(HistoryStack);
+}
+/*
+    piece_b ----> piece_c ----> piece_d ----> piece_e ----> ...
+        ^             ^             ^
+         LEFT        affectted     RIGHT 
+    
+    piece_b --> piece_c_l --> piece_new --> piece_c_r --> piece_d --> piece_e --> ...
+        |                                                   ^
+        ----------> piece_c --------------------------------|    
+
+*/
+void push_history(PIECE *left, PIECE *right, int is_boundry) {
+    //pass by value to copy the original next and previous piece
+    HISTORY history = {left, right, total_len, text_index, is_boundry};
+    da_append(history_stack, history);
+}
+
+int undo() {
+    if (history_stack.undo_len == 0) {
+        return 0;
+    }
+
+    
+    PIECE *left_boundry_ptr;
+    PIECE *right_boundry_ptr;
+    PIECE *left_ptr;
+    PIECE *right_ptr;
+    HISTORY history = history_stack.items[history_stack.undo_len - 1]; 
+
+    //mem leak
+    if (history.is_boundry) {
+        history.left->next = history.right;
+        history.right->previous = history.left;
+    } else {
+        history.left->previous->next = history.left;
+        history.right->next->previous = history.right;
+    }
+  
+    text_index = history.index;
+    total_len = history.len;
+
+    history_stack.undo_len--;
+    history_stack.redo_len++;
+
+    return 1;
 }
 
 PIECE *find_piece_from_index(int index, int *checked_index) {
@@ -127,7 +212,7 @@ static void added_append(STRINGBUILDER newtext) {
     for (size_t i = 0; i < newtext.len; i++) {
         da_append(added, newtext.items[i]);
     }
-    free(newtext.items);
+    //free(newtext.items);
 }
 
 void insert(STRINGBUILDER newtext) {
@@ -141,7 +226,7 @@ void insert(STRINGBUILDER newtext) {
     PIECE *new_p = malloc(sizeof(PIECE));
     *new_p = (PIECE){ADDED, added.len, newtext.len, NULL, NULL}; //added's len is the offset
     added_append(newtext);
-    total_len += newtext.len;
+    
 
     //TODO now the left and right carry different meaning when we split the boundry and split the 
     //middle of a piece, maybe it can be fixed for readablility
@@ -151,7 +236,10 @@ void insert(STRINGBUILDER newtext) {
     if (text_index == checked_len) { //split at boundry
         left = old_p->previous;
         right = old_p; 
+        push_history(left, right, 1);
     } else { //split at middle of piece
+        push_history(old_p, old_p, 0);
+
         int left_len = text_index - checked_len;
         int right_len = old_p->len - left_len;
 
@@ -163,9 +251,8 @@ void insert(STRINGBUILDER newtext) {
 
         *left = (PIECE){old_p->type, old_p->offset, left_len, old_p->previous, NULL};
         *right = (PIECE){old_p->type, old_p->offset + left_len, right_len, NULL, old_p->next};
-
         
-        free(old_p);
+        //free(old_p);
     }
        
     left->next = new_p;
@@ -175,7 +262,34 @@ void insert(STRINGBUILDER newtext) {
     new_p->next = right;
 
     text_index+= newtext.len;
+    total_len += newtext.len;
 }
+
+void delete() {
+    if (total_len == 0 || text_index == 0) {
+        return;
+    }
+    int checked_index;
+    PIECE *pp = find_piece_from_index(text_index, &checked_index);
+    
+    int left_len = text_index - checked_index;
+    if (left_len == 0) {
+        pp->previous->len--;
+    } else { 
+        PIECE *left_piece = malloc(sizeof(PIECE));  
+        *left_piece = (PIECE){pp->type, pp->offset, left_len - 1, pp->previous, pp};
+        pp->previous->next = left_piece;
+
+        pp->offset += left_len;
+        pp->len -= left_len;
+        pp->previous = left_piece; 
+    }
+    
+
+    text_index--;
+    total_len--;
+}
+
 
 V2 find_global_cursor_coordinate() {
     int row = 1;
@@ -201,6 +315,26 @@ V2 find_global_cursor_coordinate() {
 
     done:
         return (V2){col, row};
+}
+
+int find_next_line(int index) {
+    int checked_index;
+    int current_index;
+    PIECE *current_piece = find_piece_from_index(text_index, &checked_index);
+
+    for (; current_piece->next; current_piece = current_piece->next) {
+        for (int i = 0; i < current_piece->len; i++) {
+            STRINGBUILDER sb = current_piece->type == ORIGINAL ? original : added;
+            current_index = checked_index + i;
+            if ((current_index >= text_index) && (sb.items[current_piece->offset + i] == '\n')) {
+                current_index += 1;
+                return (current_index < total_len ? current_index : -1);
+            }
+        }
+        checked_index += current_piece->len;
+    }
+    
+    return -1; //no next line
 }
 
 void free_piece_table() {

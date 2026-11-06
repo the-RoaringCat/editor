@@ -5,7 +5,7 @@
 #define ADDED 1
 #define FAIL 2
 
-#define da_INIT(type) ((type){0, 0, NULL})
+#define da_INIT(type) ((type){.len = 0, .capacity = 0, .items = NULL})
 #define INIT_CAPACITY 1024
 
 #define da_append(da, item)\
@@ -28,29 +28,10 @@ typedef struct da_sb {
     char *items;
 } STRINGBUILDER;
 
-
-
-typedef struct NODE NODE;
-
-typedef struct NODE {
-    void *item;
-    NODE *previous;
-    NODE *next;
-} NODE;
-
-typedef struct ll {
-    size_t len;
-    NODE *head;
-    NODE *tail;
-} LIST;
-
 typedef struct vector2d {
     int col;
     int row;
 } V2;
-
-typedef V2 Cursor;
-
 
 //copy from raylib
 typedef enum {
