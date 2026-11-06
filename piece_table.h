@@ -2,6 +2,7 @@
 #define PIECE_TABLE_H
 
 #include <stdio.h>
+#include <assert.h>
 #include "common.h"
 
 //piece type
@@ -52,8 +53,8 @@ void meta_init();
 PIECE *find_piece_from_index(int index, int *checked_index);
 void insert();
 void free_piece_table();
-void p_move_left();
-void p_move_right();
+int p_move_left();
+int p_move_right();
 
 STRINGBUILDER original;
 STRINGBUILDER added;
@@ -77,16 +78,126 @@ PIECE *piece_next(PieceIterator *iterator, int *start_index) {
     return pp;
 }
 
-void p_move_left() {
-    if (text_index > 0) {
-        text_index--;
+PIECE *find_piece_from_index(int index, int *checked_index) {
+    //find the piece to insert
+    PIECE *curr;
+    int checked_len = 0;
+
+    for(curr = sentinel_head->next; curr->next; curr = curr->next) {
+        if (index < checked_len + curr->len) {
+            if (checked_index != NULL) {
+                *checked_index = checked_len;
+            } 
+            return curr;
+        }
+
+        checked_len += curr->len;
     }
+
+    //curr point to tail
+    //only when the index == checked len == total_len
+    if (checked_index != NULL) {
+        *checked_index = checked_len;
+    }
+    return curr;
 }
 
-void p_move_right() {
+int p_move_left() {
+    if (text_index > 0) {
+        text_index--;
+        return 1;
+    }
+    return 0;
+}
+
+int p_move_right() {
     if (text_index < total_len - 1) {
         text_index++; 
+        return 1;
     }
+    return 0;
+}
+
+int p_move_up(int target_col) {
+    if (text_index == 0) return 0;
+
+    int checked_index;
+    PIECE *current = find_piece_from_index(text_index, &checked_index);
+
+    int is_previous_line = 0;
+    int line_offset = 0;
+    int line_len = 0;
+    int i = text_index - checked_index - 1; //IGNORE the current one bcos the \n of the previous line 
+                                            //mark the start of the current line
+
+    for (; current->previous; current = current->previous) {
+        for (; i >= 0; i--) {
+            char *piece_buffer = current->type == ORIGINAL ? original.items : added.items;
+            char c = piece_buffer[current->offset + i];
+
+            if (!is_previous_line) {
+                if (c == '\n') {
+                    is_previous_line = 1;
+                }
+                line_offset++;
+            } else {
+                if (c == '\n') 
+                    goto found;
+
+                line_len++;
+
+                if (text_index - line_offset - line_len == 0) //reach the first line
+                    goto found;
+            }
+        }
+
+        i = (int)current->previous->len - 1; //subsequent piece start from the end
+    }
+    
+    
+    return 0;
+
+found:
+    text_index -= line_offset + line_len;
+    text_index += line_len < target_col ? line_len : (target_col - 1);
+    
+    return 1;
+}
+
+int p_move_down(int target_col) {
+    
+    int checked_index;
+    PIECE *current = find_piece_from_index(text_index, &checked_index);
+
+    int is_next_line = 0;
+    int line_offset = 0;
+    int line_len = 0;
+    int i = text_index - checked_index; //include the current one
+
+    for (; current->next; current = current->next) {
+        for (; i < current->len; i++) { 
+            char *piece_buffer = current->type == ORIGINAL ? original.items : added.items;
+            char c = piece_buffer[current->offset + i];
+
+            if (is_next_line == 0) {
+                if (c == '\n') {
+                    is_next_line = 1;      
+                }
+                line_offset++; 
+            } else {
+                if (c == '\n') {
+                    text_index += (line_offset - 1); //minus one because text_index's char is also checked 
+                    text_index += (line_len < target_col ? line_len : target_col);
+                    return 1; 
+                } 
+                line_len++;
+                
+            }                
+        }
+        i = 0; //subsequent pieces check from the start
+    }
+
+    return 0;    
 }
 void buffer_init(char *path) {
     added = da_INIT(STRINGBUILDER);
@@ -142,16 +253,7 @@ void meta_init() {
 
     history_stack = da_INIT(HistoryStack);
 }
-/*
-    piece_b ----> piece_c ----> piece_d ----> piece_e ----> ...
-        ^             ^             ^
-         LEFT        affectted     RIGHT 
-    
-    piece_b --> piece_c_l --> piece_new --> piece_c_r --> piece_d --> piece_e --> ...
-        |                                                   ^
-        ----------> piece_c --------------------------------|    
 
-*/
 void push_history(PIECE *left, PIECE *right, int is_boundry) {
     //pass by value to copy the original next and previous piece
     HISTORY history = {left, right, total_len, text_index, is_boundry};
@@ -163,14 +265,9 @@ int undo() {
         return 0;
     }
 
-    
-    PIECE *left_boundry_ptr;
-    PIECE *right_boundry_ptr;
-    PIECE *left_ptr;
-    PIECE *right_ptr;
     HISTORY history = history_stack.items[history_stack.undo_len - 1]; 
 
-    //mem leak
+    //TODO redo stack got mem leak
     if (history.is_boundry) {
         history.left->next = history.right;
         history.right->previous = history.left;
@@ -188,25 +285,7 @@ int undo() {
     return 1;
 }
 
-PIECE *find_piece_from_index(int index, int *checked_index) {
-    //find the piece to insert
-    PIECE *curr;
-    int checked_len = 0;
 
-    for(curr = sentinel_head->next; curr->next; curr = curr->next) {
-        if (index < checked_len + curr->len) { 
-            *checked_index = checked_len;
-            return curr;
-        }
-
-        checked_len += curr->len;
-    }
-
-    //curr point to tail
-    //only when the index == checked len == total_len
-    *checked_index = checked_len;
-    return curr;
-}
 
 static void added_append(STRINGBUILDER newtext) {
     for (size_t i = 0; i < newtext.len; i++) {
@@ -274,8 +353,16 @@ void delete() {
     
     int left_len = text_index - checked_index;
     if (left_len == 0) {
-        pp->previous->len--;
+        //deleteing the end of previous piece
+        if (pp->previous->len == 1) {
+            pp->previous = pp->previous->previous;
+            pp->previous->next = pp;
+        } else {
+            pp->previous->len--;
+        }
+        
     } else { 
+        //deleting the middle of a piece
         PIECE *left_piece = malloc(sizeof(PIECE));  
         *left_piece = (PIECE){pp->type, pp->offset, left_len - 1, pp->previous, pp};
         pp->previous->next = left_piece;
@@ -291,7 +378,7 @@ void delete() {
 }
 
 
-V2 find_global_cursor_coordinate() {
+void set_global_cursor_coordinate(int *cursor_col, int *cursor_row) {
     int row = 1;
     int col = 1;
     int next_char_ptr = 0; //the next char to be checked against '\n'
@@ -300,7 +387,8 @@ V2 find_global_cursor_coordinate() {
     
     for (current = sentinel_head->next; current->next; current = current->next) {
         for (int i = 0; i < current->len; i++) { 
-            if (next_char_ptr == text_index) goto done;   //we dont check the cursor's char
+            if (next_char_ptr == text_index) 
+                goto done;   //we dont check the cursor's char
 
             char *buf = current->type == ORIGINAL ? original.items : added.items;
             if (buf[current->offset + i] != '\n') {
@@ -314,7 +402,8 @@ V2 find_global_cursor_coordinate() {
     }
 
     done:
-        return (V2){col, row};
+        *cursor_col = col;
+        *cursor_row = row;
 }
 
 int find_next_line(int index) {

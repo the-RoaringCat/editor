@@ -87,7 +87,7 @@ typedef enum {
     // Function keys
     KEY_SPACE           = 32,       // Key: Space
     KEY_ESCAPE          = 256,      // Key: Esc
-    KEY_ENTER           = 257,      // Key: Enter
+    KEY_ENTER           = 10,      // Key: Enter
     KEY_TAB             = 258,      // Key: Tab
     KEY_BACKSPACE       = 259,      // Key: Backspace
     KEY_INSERT          = 260,      // Key: Ins

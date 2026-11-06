@@ -16,6 +16,8 @@ typedef struct editor_context {
     int size_row;
     int offset_col;
     int offset_row;
+    int cursor_col;
+    int cursor_row;
     char *path;
 } CONTEXT;
 
@@ -39,84 +41,71 @@ void editor_init(char *path) {
     context.current_line = 0;
     context.offset_col = 0;
     context.offset_row = 0;
+    context.cursor_col = 1;
+    context.cursor_row = 1;
     context.path = path;
 }
 
-// void render1() {
-//     PieceIterator iterator = {sentinel_head->next, sentinel_tail, 0};
-//     PIECE *pp;
-//     int checked_index;
-//     int line_count = 0;
-//     int local_offset;
-
-//     //look for the first line to print
-//     while (pp = piece_next(&iterator, &checked_index)) {
-//         char *buf = pp->type == ORIGINAL ? original.items : added.items;
-//         for (int i = 0; i < pp->len; i++) {
-//             if (line_count == context.current_line) { //check condition in the next loop to exclude the '\n'
-//                 local_offset = i;
-//                 goto done_line;
-//             }
-//             if (buf[pp->offset + i] == '\n') {
-//                 line_count++;
-//             } 
-
-//         }
-//     }
-
-// done_line:
-//     line_count = 0;
-//     //print from the current pp's offset until the line with cursor
-//     do {
-//         for ()
-//     } while (pp = piece_next(&iterator, &checked_index))
-
-
-// }
-
 void render() {
-    
     update_term_size();
+    set_global_cursor_coordinate(&context.cursor_col, &context.cursor_row);
+    if (context.cursor_row < context.offset_row + 1) {
+        context.offset_row--;
+    }
+
+    if (context.cursor_row > context.offset_row + context.size_row - 1) {
+        context.offset_row++;
+    }
 
     int checked_index;
     PIECE *current;
-    PIECE *text_index_piece = find_piece_from_index(text_index, &checked_index);
 
+    char *piece_buffer;
+    STRINGBUILDER line = da_INIT(STRINGBUILDER);
+    int total_line_count = 0;
+    int printed_line_count = 0; 
 
-    STRINGBUILDER buf;
+    for (current = sentinel_head->next; current->next; current = current->next) {
+        for (int i = 0; i < current->len; i++) { 
+            piece_buffer = current->type == ORIGINAL ? original.items : added.items;
+            char c = piece_buffer[current->offset + i];
 
-    //for (current = sentinel_head->next; current != text_index_piece ; current = current->next){
-    for (current = sentinel_head->next; current->next ; current = current->next){
-        buf = (current->type == ORIGINAL) ? original : added;
-        write(STDOUT_FILENO, buf.items + current->offset, current->len); 
+            if (printed_line_count == context.size_row - 1) 
+                goto done;
+            
+            if (c == '\n') {
+                total_line_count++;
+                if (total_line_count > context.offset_row) {
+                    printed_line_count++;
+                    da_append(line, '\n');
+                    write(STDOUT_FILENO, line.items, line.len);
+                    line.len = 0;
+                }
+            } else {
+                if (total_line_count >= context.offset_row)
+                    da_append(line, c);
+            } 
+        }
     }
-
-    // buf = (current->type == ORIGINAL) ? original : added;
-    // int left_len = text_index - checked_index;
-    // write(STDOUT_FILENO, buf.items + text_index_piece->offset, left_len);
-    // write(STDOUT_FILENO, sb.items, sb.len);
-    // write(STDOUT_FILENO, buf.items +text_index_piece->offset + left_len, text_index_piece->len - left_len);
-
-    // for (current = current->next; current->next; current = current->next) {
-    //     buf = (current->type == ORIGINAL) ? original : added;
-    //     write(STDOUT_FILENO, buf.items + current->offset, current->len); 
-    // }
-
-    char buffer[40];
+    
+done:
+    free(line.items);
+    char buffer[100];
     int len;
-    V2 cursor_position = find_global_cursor_coordinate();
+    
 
     //bottom line info
     len = snprintf(buffer, sizeof(buffer), "\x1b[%d;%dH", context.size_row, 1);
     write(STDOUT_FILENO, buffer, len);  //move to the bottom line
     write(STDOUT_FILENO, "\x1b[44;37m", 8); //set blue background and white foreground
     write(STDOUT_FILENO, "\x1b[2K", 4); //fill entire row with background color
-    len = snprintf(buffer, sizeof(buffer), "editor x: %d,y: %d, text_index: %d", cursor_position.row, cursor_position.col, text_index);
+    len = snprintf(buffer, sizeof(buffer), "editor x: %d,y: %d, x_os: %d, y_os: %d, text_index: %d", context.cursor_row, context.cursor_col, context.offset_row, context.offset_col, text_index);
     write(STDOUT_FILENO, buffer, strlen(buffer)); //print cursor coordinate
     write(STDOUT_FILENO, "\x1b[0m", 4); //reset colors
 
     //set cursor to where u type
-    len = snprintf(buffer, sizeof(buffer), "\x1b[%d;%dH", cursor_position.row, cursor_position.col);
+
+    len = snprintf(buffer, sizeof(buffer), "\x1b[%d;%dH", context.cursor_row - context.offset_row, context.cursor_col - context.offset_col);
     write(STDOUT_FILENO, buffer, len);   
 }
 
@@ -202,27 +191,22 @@ void save_file(char *path) {
 void process_key(KeyboardKey key) {
     switch(key) {
     case KEY_LEFT:
-        if (sb.len != 0) {
-            //insert(sb);
-            free(sb.items);
-            sb = da_INIT(STRINGBUILDER);
-        }
+        if (sb.len != 0) 
+            sb.len = 0;
+        
         p_move_left(); 
         break;
 
     case KEY_RIGHT:
-        if (sb.len != 0) {
-            //insert(sb);
-            free(sb.items);
-            sb = da_INIT(STRINGBUILDER);
-        }
+        if (sb.len != 0) 
+            sb.len = 0;
+        
         p_move_right();
         break;
     case KEY_ESCAPE:
-        if (sb.len != 0) {
-            free(sb.items);
-            sb = da_INIT(STRINGBUILDER);
-        }
+        if (sb.len != 0) 
+            sb.len = 0;
+        
         undo();
         //save the file
         //insert(sb); //in case the current editting field is not saved
@@ -230,18 +214,32 @@ void process_key(KeyboardKey key) {
         //write(STDOUT_FILENO, "\x1b[?1049l", 8); //leave alternate screen
         //exit(0);
         break;
-    case KEY_ENTER:
-        da_append(sb, '\n');
-        //insert(sb);
-        sb = da_INIT(STRINGBUILDER);
-        break;
+    // case KEY_ENTER:
+    //     da_append(sb, '\n');
+    //     //insert(sb);
+    //     sb = da_INIT(STRINGBUILDER);
+    //     break;
     case KEY_BACKSPACE:
+        if (sb.len != 0) {
+            sb.len--;
+        }
         delete();
         break;
     case KEY_UP:
+        if (sb.len != 0)
+            sb.len = 0;
+
+        p_move_up(context.cursor_col);
+        break;
     case KEY_DOWN:
+        if (sb.len != 0)
+            sb.len = 0;
+
+        p_move_down(context.cursor_col);
+        break;
     case KEY_NULL:
         break;
+    case KEY_ENTER:
     default:
         if (sb.len != 0) {
             undo();
