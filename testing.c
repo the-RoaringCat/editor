@@ -45,6 +45,42 @@ void editor_init(char *path) {
     context.cursor_row = 1;
     context.path = path;
 }
+char *keywords[] = {"for", "while", "if", "else"};
+char *types[] = {"int", "bool", "char", "float"};
+
+void render_a_line(STRINGBUILDER line) {
+    STRINGBUILDER token = da_INIT(STRINGBUILDER);
+
+    for (size_t i = 0; i < line.len; i++) {
+        char c = line.items[i];
+        if (ispunct(c) || isspace(c) || c == '\n') {
+            if (token.len != 0) {
+                for (size_t j = 0; j < sizeof(keywords)/sizeof(keywords[0]); j++) {
+                    size_t len = strlen(keywords[j]);
+                    if (token.len == len && memcmp(token.items, keywords[j], len) == 0) {
+                        write(STDOUT_FILENO, "\x1b[31m", 5);  //red
+                        goto print;
+                    }
+                }
+                for (size_t j = 0; j < sizeof(types)/sizeof(types[0]); j++) {
+                    size_t len = strlen(types[j]);
+                    if (token.len == len && memcmp(token.items, types[j], len) == 0) {
+                        write(STDOUT_FILENO, "\x1b[32m", 5);  //green
+                        goto print;
+                    }
+                }
+            print:
+                write(STDOUT_FILENO, token.items, token.len);
+                write(STDOUT_FILENO, "\x1b[0m", 4);   // Reset all styles
+                token.len = 0;
+            }
+            write(STDOUT_FILENO, &c, 1);
+        } else {
+            da_append(token, c);
+        }
+        
+    }   
+}
 
 void render() {
     update_term_size();
@@ -78,7 +114,8 @@ void render() {
                 if (total_line_count > context.offset_row) {
                     printed_line_count++;
                     da_append(line, '\n');
-                    write(STDOUT_FILENO, line.items, line.len);
+                    render_a_line(line);
+                    //write(STDOUT_FILENO, line.items, line.len);
                     line.len = 0;
                 }
             } else {
