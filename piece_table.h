@@ -154,7 +154,7 @@ int p_move_up(int target_col) {
         i = (int)current->previous->len - 1; //subsequent piece start from the end
     }
     
-    
+
     return 0;
 
 found:
@@ -185,13 +185,13 @@ int p_move_down(int target_col) {
                 }
                 line_offset++; 
             } else {
+                line_len++;
                 if (c == '\n') {
                     text_index += (line_offset - 1); //minus one because text_index's char is also checked 
                     text_index += (line_len < target_col ? line_len : target_col);
                     return 1; 
                 } 
-                line_len++;
-                
+                              
             }                
         }
         i = 0; //subsequent pieces check from the start

@@ -244,18 +244,14 @@ void process_key(KeyboardKey key) {
         if (sb.len != 0) 
             sb.len = 0;
         
-        undo();
+        //undo();
         //save the file
-        //insert(sb); //in case the current editting field is not saved
-        //save_file(file_path);
-        //write(STDOUT_FILENO, "\x1b[?1049l", 8); //leave alternate screen
-        //exit(0);
+        insert(sb); //in case the current editting field is not saved
+        save_file(file_path);
+        write(STDOUT_FILENO, "\x1b[?1049l", 8); //leave alternate screen
+        exit(0);
         break;
-    // case KEY_ENTER:
-    //     da_append(sb, '\n');
-    //     //insert(sb);
-    //     sb = da_INIT(STRINGBUILDER);
-    //     break;
+   
     case KEY_BACKSPACE:
         if (sb.len != 0) {
             sb.len--;
@@ -300,7 +296,7 @@ int main(int argc, char **argv) {
     
     enable_raw_mode();
    
-    //write(STDOUT_FILENO, "\x1b[?1049h", 8);  //alternate screen 
+    write(STDOUT_FILENO, "\x1b[?1049h", 8);  //alternate screen 
     sb = da_INIT(STRINGBUILDER);
 
     clear_screen();
